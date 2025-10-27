@@ -1,72 +1,80 @@
-# app.py
+import streamlit as st
 import numpy as np
 import pandas as pd
-import streamlit as st
-import plotly.graph_objects as go
-from io import StringIO
+import plotly.express as px
 
+# --- Definición de los Modelos ---
 
-st.set_page_config(page_title="Modelos de Crecimiento", page_icon="📈", layout="wide")
+def exponential_growth(P0, r, t_values):
+    """Calcula el crecimiento exponencial."""
+    # P(t) = P0 * e^(r*t)
+    return P0 * np.exp(r * t_values)
 
+def logistic_growth(P0, r, K, t_values):
+    """Calcula el crecimiento logístico."""
+    # P(t) = K / (1 + ((K - P0) / P0) * e^(-r*t))
+    return K / (1 + ((K - P0) / P0) * np.exp(-r * t_values))
 
-st.title("📈 Modelos de Crecimiento – Explorador de Escenarios")
-st.caption("Ajusta parámetros y compara escenarios para crecimiento Exponencial y Logístico.")
+# --- Configuración de la Página de Streamlit ---
+st.set_page_config(page_title="Simulador de Crecimiento", layout="wide")
+st.title("📈 Simulador de Modelos de Crecimiento")
+st.write("Usa los controles en la barra lateral para ajustar los parámetros de diferentes modelos de crecimiento y ver cómo evolucionan.")
 
+# --- Barra Lateral de Controles ---
+st.sidebar.header("Parámetros de Simulación")
 
-# =========================
-# Utilidades
-# =========================
-@st.cache_data
-def generar_tiempo(horas, puntos):
-return np.linspace(0, horas, puntos)
+# Parámetros comunes
+P0 = st.sidebar.slider("Población Inicial (P0)", 1, 1000, 50)
+t_max = st.sidebar.slider("Número de Períodos (t)", 10, 200, 50)
+r = st.sidebar.slider("Tasa de Crecimiento (r)", 0.01, 1.0, 0.1, step=0.01)
 
-
-@st.cache_data
-def sim_exponencial(N0, r, t):
-return N0 * np.exp(r * t)
-
-
-@st.cache_data
-def sim_logistico(N0, r, K, t):
-# Solución analítica del logístico clásico
-# N(t) = K / (1 + ((K - N0)/N0)*exp(-r t))
-N0 = max(1e-12, N0)
-K = max(1e-12, K)
-return K / (1 + ((K - N0) / N0) * np.exp(-r * t))
-
-
-MODEL_OPTIONS = ["Exponencial", "Logístico"]
-
-
-# =========================
-# Sidebar: Configuración base y escenarios
-# =========================
-st.sidebar.header("⚙️ Configuración")
-T = st.sidebar.number_input("Horizonte de tiempo (unidades)", min_value=1.0, value=50.0, step=1.0)
-num_puntos = st.sidebar.slider("Resolución (n° de puntos)", 50, 2000, 500)
-t = generar_tiempo(T, num_puntos)
-
-
+# Parámetro específico para el modelo logístico
 st.sidebar.markdown("---")
-st.sidebar.subheader("📦 Parámetros por defecto")
-def_modelo = st.sidebar.selectbox("Modelo por defecto", MODEL_OPTIONS, index=1)
-N0_def = st.sidebar.number_input("N0 (población/valor inicial)", min_value=0.0, value=10.0)
-r_def = st.sidebar.number_input("r (tasa de crecimiento)", value=0.1, step=0.01, format="%.3f")
-K_def = st.sidebar.number_input("K (capacidad de carga, solo logístico)", min_value=0.0, value=100.0)
+st.sidebar.subheader("Parámetros Logísticos")
+K = st.sidebar.slider("Capacidad de Carga (K)", 500, 50000, 10000)
+st.sidebar.info("La Capacidad de Carga (K) solo se aplica al modelo logístico.")
 
 
-# =========================
-# Escenarios (tabla editable)
-# =========================
-if "escenarios" not in st.session_state:
-st.session_state.escenarios = pd.DataFrame([
-{"Nombre": "Base", "Modelo": def_modelo, "N0": N0_def, "r": r_def, "K": K_def}
-])
+# --- Generación de Datos ---
+t_values = np.arange(0, t_max + 1)
 
+# Crear un DataFrame para almacenar los resultados
+df_growth = pd.DataFrame({'Período': t_values})
 
-col_a, col_b, col_c = st.columns([1,1,2], vertical_alignment="center")
-with col_a:
-if st.button("➕ Añadir escenario"):
-st.session_state.escenarios.loc[len(st.session_state.escenarios)] = {
-"Nombre": f"Esc {len(st.session_state.escenarios)+1}",
+# Calcular los dos escenarios
+df_growth['Crecimiento Exponencial'] = exponential_growth(P0, r, t_values)
+df_growth['Crecimiento Logístico'] = logistic_growth(P0, r, K, t_values)
+
+# --- Visualización ---
+st.subheader("Visualización de Escenarios de Crecimiento")
+
+# Re-formatear el DataFrame para que sea compatible con Plotly (formato "largo")
+df_melted = df_growth.melt(
+    id_vars='Período', 
+    value_vars=['Crecimiento Exponencial', 'Crecimiento Logístico'],
+    var_name='Tipo de Modelo', 
+    value_name='Población'
 )
+
+# Crear el gráfico interactivo con Plotly
+fig = px.line(
+    df_melted,
+    x='Período',
+    y='Población',
+    color='Tipo de Modelo',
+    title=f"Simulación de Crecimiento (P0={P0}, r={r}, K={K})",
+    labels={'Población': 'Población Total', 'Período': 'Tiempo / Períodos'}
+)
+
+# Añadir una línea horizontal para la Capacidad de Carga (K)
+fig.add_hline(y=K, line_dash="dot",
+              annotation_text="Capacidad de Carga (K)",
+              annotation_position="bottom right",
+              line_color="red")
+
+st.plotly_chart(fig, use_container_width=True)
+
+
+# --- Mostrar Datos (Opcional) ---
+st.subheader("Datos Generados")
+st.dataframe(df_melted.tail(10)) # Mostrar los últimos 10 registros
